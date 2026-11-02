@@ -1,0 +1,499 @@
+{% load static %}
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <title>Manajemen Sistem Kehadiran</title>
+  <link rel="stylesheet" href="{% static 'css/style.css' %}">
+  <!-- Load Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+
+  <!-- JIKA BELUM LOGIN: TAMPILKAN OVERLAY LOGIN -->
+  {% if not user.is_authenticated %}
+  <div class="login-wrapper" style="display: flex; height: 100vh; width: 100vw; align-items: center; justify-content: center; background: #f6f8f6;">
+    <div class="modal" style="width: 380px; box-shadow: 0 20px 50px #1e76521a; animation: none;">
+      <div class="modal-icon" style="background: #1e7652; color: white; margin: 0 auto 20px;"><i data-lucide="shield-check"></i></div>
+      <h2 style="text-align: center; margin-bottom: 25px;">Sistem Admin</h2>
+      <form id="loginForm">
+        <label class="field">
+          <span>Username</span>
+          <input type="text" id="loginUser" required placeholder="Masukkan username admin">
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <div class="password-wrapper">
+            <input type="password" id="loginPass" required placeholder="Masukkan password" autocomplete="current-password">
+            <button type="button" class="toggle-password-btn" id="toggleLoginPass" aria-label="Tampilkan password" title="Tampilkan/Sembunyikan password">
+              <i data-lucide="eye" class="eye-open" style="width: 16px;"></i>
+              <i data-lucide="eye-off" class="eye-closed" style="width: 16px; display:none;"></i>
+            </button>
+          </div>
+        </label>
+        <div class="modal-error" id="loginError" style="text-align: center; margin-bottom: 15px;"></div>
+        <button type="submit" class="button button-primary" style="width: 100%; padding: 12px; font-size: 14px;" id="loginBtn">Masuk Aplikasi</button>
+      </form>
+    </div>
+  </div>
+  
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('loginBtn');
+      btn.disabled = true; btn.textContent = 'Memverifikasi...';
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: document.getElementById('loginUser').value,
+            password: document.getElementById('loginPass').value
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        window.location.reload(); // Reload agar masuk ke dashboard utama
+      } catch(err) {
+        document.getElementById('loginError').textContent = err.message;
+        btn.disabled = false; btn.textContent = 'Masuk Aplikasi';
+      }
+    });
+
+    document.getElementById('toggleLoginPass')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const input = document.getElementById('loginPass');
+      const btn = e.currentTarget;
+      const isPass = input.type === 'password';
+      input.type = isPass ? 'text' : 'password';
+      const eyeOpen = btn.querySelector('.eye-open');
+      const eyeClosed = btn.querySelector('.eye-closed');
+      if (eyeOpen) eyeOpen.style.display = isPass ? 'none' : 'inline';
+      if (eyeClosed) eyeClosed.style.display = isPass ? 'inline' : 'none';
+    });
+
+    lucide.createIcons();
+  </script>
+  
+  <!-- JIKA SUDAH LOGIN: TAMPILKAN APLIKASI UTAMA -->
+  {% else %}
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="brand">
+      <span>Konfigurasi<span class="brand-light">Mesin</span></span>
+    </div>
+
+    <div class="side-label">MASTER DATA</div>
+    <button class="nav-item active" id="navUser"><i data-lucide="users" class="nav-icon"></i> Manajemen Karyawan</button>
+    <div class="side-label" style="margin-top: 14px;">ALAT</div>
+    <!-- EDIT SEKALIGUS DROPDOWN (DIKEMBALIKAN KE SINI) -->
+    <div class="nav-dropdown" id="bulkEditDropdown">
+      <button class="nav-item nav-item-dropdown" id="bulkEditToggle" aria-expanded="false">
+        <span><i data-lucide="layout-grid" class="nav-icon"></i> Edit Sekaligus</span>
+        <span class="dropdown-arrow" id="bulkEditArrow">›</span>
+      </button>
+      <div class="dropdown-menu" id="bulkEditMenu" aria-hidden="true">
+        <button class="dropdown-item" id="exportExcelBtn" type="button">
+          <span class="dropdown-item-icon"><i data-lucide="download" style="width: 16px;"></i></span>
+          <span>
+            <strong>Export Excel</strong>
+            <small>Unduh data user aktif</small>
+          </span>
+        </button>
+        <button class="dropdown-item" id="importExcelBtn" type="button">
+          <span class="dropdown-item-icon"><i data-lucide="upload" style="width: 16px;"></i></span>
+          <span>
+            <strong>Import Excel</strong>
+            <small>Edit nama massal via file</small>
+          </span>
+        </button>
+        <div class="dropdown-divider"></div>
+        <button class="dropdown-item" id="downloadTemplateBtn" type="button">
+          <span class="dropdown-item-icon"><i data-lucide="file-spreadsheet" style="width: 16px;"></i></span>
+          <span>
+            <strong>Unduh Template</strong>
+            <small>Template kosong untuk import</small>
+          </span>
+        </button>
+      </div>
+    </div>
+
+    <div class="side-label" style="margin-top: 14px;">PERANGKAT</div>
+    <button class="nav-item" id="openMachines"><i data-lucide="server" class="nav-icon"></i> Daftar Mesin <span class="side-count" id="machineCount">0</span></button>
+
+    <div class="side-label" style="margin-top: 14px;">SISTEM</div>
+    <button class="nav-item" id="navAdmins"><i data-lucide="shield-check" class="nav-icon"></i> Manajemen Admin</button>
+    <button class="nav-item" id="navLogs"><i data-lucide="history" class="nav-icon"></i> Log Aktivitas</button>
+    
+    <!-- Logout Button -->
+    <div style="margin-top: auto; padding-top: 20px; border-top: 1px solid var(--line);">
+       <button class="nav-item" id="btnLogout" style="color: #b14f4a;"><i data-lucide="log-out" class="nav-icon"></i> Keluar (Logout)</button>
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main class="main">
+    <div class="topbar">
+       <div>
+         <div class="eyebrow">Hai, {{ user.first_name }}!</div>
+         <h1>Ringkasan Mesin Aktif</h1>
+       </div>
+    </div>
+
+    <!-- MACHINE BANNER -->
+    <section class="machine-banner">
+      <div class="machine-symbol"><i data-lucide="cpu" style="width: 32px; height: 32px;"></i></div>
+      <div class="machine-copy">
+        <div class="label">
+          MESIN TERPILIH <span class="live-indicator" id="statusDot"></span>
+          <span id="statusText">Belum terhubung</span>
+        </div>
+        <h2 id="activeName">Belum ada mesin aktif</h2>
+        <p id="activeAddress">Tambahkan mesin untuk mulai mengelola data.</p>
+      </div>
+      <div class="banner-actions">
+        <button class="button button-ghost" id="switchMachine">Pilih Mesin</button>
+        <button class="button button-light" id="refreshUsers" disabled><i data-lucide="refresh-cw" style="width:14px; margin-right:4px;"></i> Sinkron</button>
+      </div>
+    </section>
+
+    <!-- VIEWS WRAPPER -->
+    <div id="viewContainer">
+      
+      <!-- VIEW 1: MANAJEMEN KARYAWAN -->
+      <section class="content-card" id="userViewCard">
+        <div class="card-heading">
+          <div><h3>Daftar Karyawan</h3><p>Data tersimpan di mesin absensi aktif.</p></div>
+          <div class="table-tools">
+            <button id="btnBulkDelete" class="button button-tool" style="display: none; color: #b14f4a; background: #fff5f5;"><i data-lucide="trash-2"></i> Hapus (<b id="selectedCount">0</b>)</button>
+            <button id="btnDeselectAll" class="button button-tool" style="display: none;">Batal Pilih</button>
+            <label class="search"><i data-lucide="search"></i><input id="searchInput" placeholder="Cari nama atau ID..."></label>
+            <!-- Input file hidden untuk fitur import excel -->
+            <input type="file" id="excelFileInput" accept=".xlsx, .xls" style="display: none;">
+            <span class="user-count" id="userCount">0 user</span>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 40px; text-align: center;"><input type="checkbox" id="selectAll"></th>
+                <th class="sortable" data-sort="id">ID <span class="sort-icon">↕</span></th>
+                <th class="sortable" data-sort="nama">NAMA <span class="sort-icon">↕</span></th>
+                <th class="sortable" data-sort="role">ROLE <span class="sort-icon">↕</span></th>
+                <th class="sortable" data-sort="status">STATUS <span class="sort-icon">↕</span></th>
+                <th class="action-head">AKSI</th>
+              </tr>
+            </thead>
+            <tbody id="userRows"></tbody>
+          </table>
+        </div>
+        <div class="table-foot">
+          <div class="pagination-info"><span id="tableFoot">Menampilkan 0 user</span></div>
+          <div class="pagination-controls" id="paginationControls"></div>
+        </div>
+      </section>
+
+      <!-- VIEW 3: MANAJEMEN ADMIN -->
+      <section class="content-card" id="adminViewCard" style="display: none;">
+        <div class="card-heading">
+          <div><h3>Manajemen Akun Admin</h3><p>Kelola hak akses untuk masuk ke aplikasi web ini.</p></div>
+          <div class="table-tools">
+             <button id="btnNewAdmin" class="button button-primary"><i data-lucide="plus" style="width: 16px; margin-right:4px;"></i> Tambah Admin</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>USERNAME</th><th>NAMA LENGKAP</th><th>DIBUAT PADA</th><th>STATUS</th><th style="text-align: right;">AKSI</th></tr></thead>
+            <tbody id="adminRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- VIEW 4: LOG AKTIVITAS -->
+      <section class="content-card" id="logViewCard" style="display: none;">
+        <div class="card-heading">
+          <div><h3>Log Aktivitas Admin</h3><p>Pantau riwayat masuk dan keluar pengguna sistem.</p></div>
+          <div class="table-tools"><button id="btnRefreshLogs" class="button button-tool"><i data-lucide="refresh-ccw"></i> Muat Ulang</button></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>WAKTU</th><th>USERNAME (ADMIN)</th><th>IP ADDRESS</th><th>AKTIVITAS</th></tr></thead>
+            <tbody id="logRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+  </main>
+  
+  <!-- MODAL: ADD ADMIN -->
+  <div class="modal-backdrop" id="addAdminModal" aria-hidden="true">
+    <section class="modal">
+      <button class="close-button" data-close="addAdminModal">×</button>
+      <div class="modal-icon"><i data-lucide="user-plus"></i></div>
+      <h2>Tambah Admin Baru</h2>
+      <form id="addAdminForm">
+        <label class="field"><span>Nama Lengkap</span><input id="newAdminName" placeholder="Contoh: Budi Santoso" required></label>
+        <label class="field"><span>Username Login</span><input id="newAdminUser" placeholder="Contoh: budi123" required></label>
+        <label class="field">
+          <span>Password</span>
+          <div class="password-wrapper">
+            <input type="password" id="newAdminPass" placeholder="Masukkan password" required autocomplete="new-password">
+            <button type="button" class="toggle-password-btn" id="toggleNewAdminPass" aria-label="Tampilkan password" title="Tampilkan/Sembunyikan password">
+              <i data-lucide="eye" class="eye-open" style="width: 16px;"></i>
+              <i data-lucide="eye-off" class="eye-closed" style="width: 16px; display:none;"></i>
+            </button>
+          </div>
+        </label>
+        <div class="modal-error" id="addAdminError"></div>
+        <div class="modal-actions">
+          <button type="button" class="button button-ghost" data-close="addAdminModal">Batal</button>
+          <button type="submit" class="button button-primary" id="saveAdminBtn">Simpan Admin</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <!-- MODAL: EDIT ADMIN -->
+  <div class="modal-backdrop" id="editAdminModal" aria-hidden="true">
+    <section class="modal">
+      <button class="close-button" data-close="editAdminModal">×</button>
+      <div class="modal-icon"><i data-lucide="user-pen"></i></div>
+      <h2>Edit Akun Admin</h2>
+      <p class="modal-intro">Kosongkan password jika tidak ingin mengubahnya.</p>
+      <form id="editAdminForm">
+        <input type="hidden" id="editAdminId">
+        <label class="field"><span>Nama Lengkap</span><input id="editAdminName" required></label>
+        <label class="field"><span>Username Login</span><input id="editAdminUser" required></label>
+        <label class="field">
+          <span>Password Baru <small>(Opsional)</small></span>
+          <div class="password-wrapper">
+            <input type="password" id="editAdminPass" placeholder="Biarkan kosong jika tetap" autocomplete="new-password">
+            <button type="button" class="toggle-password-btn" id="toggleEditAdminPass" aria-label="Tampilkan password" title="Tampilkan/Sembunyikan password">
+              <i data-lucide="eye" class="eye-open" style="width: 16px;"></i>
+              <i data-lucide="eye-off" class="eye-closed" style="width: 16px; display:none;"></i>
+            </button>
+          </div>
+        </label>
+        <div class="modal-error" id="editAdminError"></div>
+        <div class="modal-actions">
+          <button type="button" class="button button-ghost" data-close="editAdminModal">Batal</button>
+          <button type="submit" class="button button-primary" id="updateAdminBtn">Simpan Perubahan</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <!-- MODAL: TAMBAH MESIN -->
+  <div class="modal-backdrop" id="machineModal" aria-hidden="true">
+    <section class="modal">
+      <button class="close-button" data-close="machineModal">×</button>
+      <div class="modal-icon"><i data-lucide="plug-zap"></i></div>
+      <div class="modal-eyebrow">KONEKSI PERANGKAT</div>
+      <h2>Tambah mesin</h2>
+      <p class="modal-intro">Masukkan detail mesin absensi. Konfigurasi akan disimpan setelah koneksi berhasil.</p>
+
+      <form id="machineForm">
+        <label class="field">
+          <span>Nama mesin <small>OPSIONAL</small></span>
+          <input name="name" placeholder="Contoh: Mesin Pintu Utama">
+        </label>
+        <div class="field-row">
+          <label class="field">
+            <span>Alamat IP</span>
+            <input name="ip" placeholder="10.11.11.232" required>
+          </label>
+          <label class="field">
+            <span>Port</span>
+            <input name="port" type="number" value="4370" min="1" max="65535" required>
+          </label>
+        </div>
+        <div class="field">
+          <span>Comm key</span>
+          <div class="password-wrapper">
+            <input name="comm_key" id="machineCommKey" type="password" placeholder="Masukkan communication key" autocomplete="new-password">
+            <button type="button" class="toggle-password-btn" id="toggleMachineCommKey" aria-label="Tampilkan password" title="Tampilkan/Sembunyikan password">
+              <i data-lucide="eye" class="eye-open" style="width: 16px;"></i>
+              <i data-lucide="eye-off" class="eye-closed" style="width: 16px; display:none;"></i>
+            </button>
+          </div>
+        </div>
+        <div class="modal-error" id="machineError"></div>
+        <div class="modal-actions">
+          <button type="button" class="button button-ghost" data-close="machineModal">Batal</button>
+          <button type="submit" class="button button-primary" id="connectSubmit">Hubungkan mesin <span>→</span></button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <!-- MODAL: EDIT USER -->
+  <div class="modal-backdrop" id="editModal" aria-hidden="true">
+    <section class="modal edit-modal">
+      <button class="close-button" data-close="editModal">×</button>
+      <div class="modal-icon edit-icon"><i data-lucide="pencil"></i></div>
+      <div class="modal-eyebrow">DETAIL USER</div>
+      <h2>Edit user</h2>
+      <p class="modal-intro">Perubahan akan dikirim ke mesin dan daftar user akan dimuat ulang.</p>
+
+      <form id="editForm">
+        <div class="field">
+          <span>ID</span>
+          <input name="pin" readonly class="readonly">
+        </div>
+        <label class="field">
+          <span>Nama</span>
+          <input name="nama" required maxlength="40" placeholder="Nama user">
+        </label>
+        <div class="field">
+          <span>Role</span>
+          <select name="privilege">
+            <option value="0">User</option>
+            <option value="3">Admin</option>
+          </select>
+        </div>
+        <label class="toggle-row">
+          <span><strong>Aktif</strong><small>User dapat digunakan pada mesin</small></span>
+          <input name="enabled" type="checkbox"><i></i>
+        </label>
+        <div class="modal-error" id="editError"></div>
+        <div class="modal-actions">
+          <button type="button" class="button button-ghost" data-close="editModal">Batal</button>
+          <button type="submit" class="button button-primary" id="updateSubmit">Simpan perubahan <span>→</span></button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <!-- MODAL: PILIH MESIN -->
+  <div class="modal-backdrop" id="devicePicker" aria-hidden="true">
+    <section class="modal picker-modal">
+      <button class="close-button" data-close="devicePicker">×</button>
+      <div class="modal-eyebrow">PERANGKAT TERSIMPAN</div>
+      <h2>Pilih mesin</h2>
+      <p class="modal-intro">Pilih mesin untuk terhubung, atau gunakan tombol edit untuk mengubah konfigurasi.</p>
+      <div id="deviceList" class="device-list"></div>
+      <button class="button button-add-wide" id="addMachineFromPicker">＋ Tambah mesin lain</button>
+    </section>
+  </div>
+
+  <!-- MODAL: EDIT MESIN -->
+  <div class="modal-backdrop" id="editMachineModal" aria-hidden="true">
+    <section class="modal">
+      <button class="close-button" id="editMachineClose">×</button>
+      <div class="modal-icon"><i data-lucide="settings"></i></div>
+      <div class="modal-eyebrow">EDIT PERANGKAT</div>
+      <h2>Edit mesin</h2>
+      <p class="modal-intro">Ubah konfigurasi mesin. Koneksi ulang diperlukan setelah menyimpan agar data user dapat dimuat.</p>
+
+      <form id="editMachineForm">
+        <input type="hidden" name="machine_id">
+        <label class="field">
+          <span>Nama mesin <small>OPSIONAL</small></span>
+          <input name="name" placeholder="Contoh: Mesin Pintu Utama">
+        </label>
+        <div class="field-row">
+          <label class="field">
+            <span>Alamat IP</span>
+            <input name="ip" placeholder="10.11.11.232" required>
+          </label>
+          <label class="field">
+            <span>Port</span>
+            <input name="port" type="number" value="4370" min="1" max="65535" required>
+          </label>
+        </div>
+        <div class="field">
+          <span>Comm key</span>
+          <div class="password-wrapper">
+            <input name="comm_key" id="editMachineCommKey" type="password" placeholder="Communication key" autocomplete="new-password">
+            <button type="button" class="toggle-password-btn" id="toggleEditMachineCommKey" aria-label="Tampilkan password" title="Tampilkan/Sembunyikan password">
+              <i data-lucide="eye" class="eye-open" style="width: 16px;"></i>
+              <i data-lucide="eye-off" class="eye-closed" style="width: 16px; display:none;"></i>
+            </button>
+          </div>
+        </div>
+        <div class="modal-error" id="editMachineError"></div>
+        <div class="modal-actions">
+          <button type="button" class="button button-ghost" id="editMachineCancel">Batal</button>
+          <button type="button" class="button button-primary" id="editMachineSubmit">Simpan konfigurasi <span>→</span></button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <!-- MODAL: PREVIEW IMPORT EXCEL -->
+  <div class="modal-backdrop" id="importModal" aria-hidden="true">
+    <section class="modal import-modal">
+      <button class="close-button" data-close="importModal">×</button>
+      <div class="modal-icon import-icon"><i data-lucide="bar-chart-2"></i></div>
+      <div class="modal-eyebrow">KONFIRMASI IMPORT EXCEL</div>
+      <h2>Pratinjau Perubahan Nama</h2>
+      <p class="modal-intro">
+        Berikut daftar ID yang terbaca dari Excel beserta nama lama saat ini dan nama baru yang akan menggantikannya.
+      </p>
+
+      <div class="import-summary-chips" id="importSummaryChips"></div>
+
+      <div class="import-preview-wrap">
+        <table class="preview-table">
+          <thead>
+            <tr>
+              <th style="width: 80px;">ID</th>
+              <th>NAMA LAMA (SAAT INI)</th>
+              <th>NAMA BARU (EXCEL)</th>
+              <th style="width: 140px; text-align: right;">STATUS</th>
+            </tr>
+          </thead>
+          <tbody id="importPreviewRows">
+            <!-- Diisi JavaScript -->
+          </tbody>
+        </table>
+      </div>
+
+      <div class="modal-actions" style="margin-top: 22px;">
+        <button type="button" class="button button-ghost" data-close="importModal">Batal</button>
+        <button type="button" class="button button-primary" id="confirmImportBtn">
+          Iya, Ganti Nama User <span>→</span>
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <!-- MODAL: HAPUS MASSAL -->
+  <div class="modal-backdrop" id="bulkDeleteModal" aria-hidden="true">
+    <section class="modal">
+      <button class="close-button" data-close="bulkDeleteModal">×</button>
+      <div class="modal-icon" style="background: #fff5f5; color: #cf6262;"><i data-lucide="trash-2"></i></div>
+      <div class="modal-eyebrow">KONFIRMASI HAPUS</div>
+      <h2>Hapus User Terpilih</h2>
+      <p class="modal-intro">Anda akan menghapus permanen <b><span id="modalUserCount">0</span></b> user berikut dari mesin.</p>
+
+      <div style="max-height: 180px; overflow-y: auto; background: #fafbfa; border: 1px solid #e6ebe8; border-radius: 8px; padding: 10px 15px; margin-bottom: 15px;">
+        <ul id="deleteUserList" style="margin: 0; padding-left: 20px; font-size: 12px; color: #43544c; line-height: 1.6;">
+          <!-- Diisi via JavaScript -->
+        </ul>
+      </div>
+
+      <label class="toggle-row" style="background: #fff9f9; padding: 12px 15px; border: 1px solid #fae1e1; border-radius: 8px;">
+        <span>
+          <strong style="color: #b14f4a;">Saya yakin data sudah benar</strong>
+          <small style="color: #c97c78;">Data yang dihapus tidak dapat dikembalikan lagi</small>
+        </span>
+        <input type="checkbox" id="confirmDeleteCheck"><i></i>
+      </label>
+
+      <div class="modal-error" id="bulkDeleteError" style="margin-top: 10px;"></div>
+      <div class="modal-actions">
+        <button type="button" class="button button-ghost" data-close="bulkDeleteModal">Batal</button>
+        <button type="button" class="button button-primary" id="executeBulkDelete" style="background: #cf6262; box-shadow: 0 5px 12px #cf626233;" disabled>Hapus Sekarang <span>→</span></button>
+      </div>
+    </section>
+  </div>
+  
+  <!-- TOAST & JS -->
+  <div class="toast" id="toast"></div>
+  <script src="{% static 'js/app.js' %}"></script>
+  {% endif %}
+</body>
+</html>
