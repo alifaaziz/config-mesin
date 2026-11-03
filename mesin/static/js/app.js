@@ -1,7 +1,9 @@
 const state = {
   devices: [], activeId: null, users: [],
   currentPage: 1, itemsPerPage: 30, sortCol: 'id', sortDir: 'asc',
-  selectedUsers: new Map()
+  selectedUsers: new Map(),
+
+  logs: [], logCurrentPage: 1, logItemsPerPage: 30
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -99,29 +101,50 @@ $('#navLogs')?.addEventListener('click', () => {
 // ==========================================
 // ADMIN MANAGEMENT (CRUD)
 // ==========================================
-// 1. Render Tabel Admin (Tambahkan Tombol Edit)
+// 1. Render Tabel Admin (Dengan Validasi Role / RBAC)
 async function loadAdmins() {
   try {
     const res = await api('/api/admins');
     const tbody = $('#adminRows');
     if (tbody) {
       const admins = res.admins || [];
-      tbody.innerHTML = admins.map(a => `
-        <tr>
-          <td><strong>${escapeHtml(a.username)}</strong> ${a.is_superuser ? '<span class="role-pill admin" style="margin-left:8px;">Superuser</span>' : ''}</td>
-          <td>${escapeHtml(a.first_name || '—')}</td>
-          <td>${escapeHtml(a.date_joined || '-')}</td>
-          <td><span class="status-pill"><i></i>Aktif</span></td>
-          <td style="text-align: right;">
-            <button class="edit-button" onclick="openEditAdmin(${a.id}, '${escapeHtml(a.username)}', '${escapeHtml(a.first_name || '')}')" style="margin-right: 6px;">
-              <i data-lucide="pencil" style="width:12px; height:12px; margin-right:4px;"></i> Edit
-            </button>
-            <button class="delete-button" onclick="deleteAdmin(${a.id}, '${escapeHtml(a.username)}')">
-              <i data-lucide="trash-2" style="width:12px; height:12px; margin-right:4px;"></i> Hapus
-            </button>
-          </td>
-        </tr>
-      `).join('');
+      tbody.innerHTML = admins.map(a => {
+        // Cek Hak Akses
+        const isSelf = a.id === window.CURRENT_USER_ID;
+        const isTargetSuperadmin = a.is_superuser;
+        const canEdit = window.IS_SUPERUSER || !isTargetSuperadmin;
+        const canDelete = (window.IS_SUPERUSER || !isTargetSuperadmin) && !isSelf;
+
+        // Render Tombol
+        let actionHtml = '';
+        if (canEdit) {
+          actionHtml += `<button class="edit-button" onclick="openEditAdmin(${a.id}, '${escapeHtml(a.username)}', '${escapeHtml(a.first_name || '')}')" style="margin-right: 6px;">
+            <i data-lucide="pencil" style="width:12px; height:12px; margin-right:4px;"></i> Edit
+          </button>`;
+        }
+        if (canDelete) {
+          actionHtml += `<button class="delete-button" onclick="deleteAdmin(${a.id}, '${escapeHtml(a.username)}')">
+            <i data-lucide="trash-2" style="width:12px; height:12px; margin-right:4px;"></i> Hapus
+          </button>`;
+        }
+
+        // Tampilkan teks gembok jika akses diblokir
+        if (!canEdit && !canDelete) {
+          actionHtml = `<span style="font-size: 12px; color: #a2aba7; font-weight: 500; display: inline-flex; align-items: center; justify-content: flex-end;"><i data-lucide="lock" style="width:12px; margin-right:4px;"></i> Terkunci</span>`;
+        }
+
+        return `
+          <tr>
+            <td><strong>${escapeHtml(a.username)}</strong> ${a.is_superuser ? '<span class="role-pill admin" style="margin-left:8px;">Superuser</span>' : ''}</td>
+            <td>${escapeHtml(a.first_name || '—')}</td>
+            <td>${escapeHtml(a.date_joined || '-')}</td>
+            <td><span class="status-pill"><i></i>Aktif</span></td>
+            <td style="text-align: right; white-space: nowrap;">
+              ${actionHtml}
+            </td>
+          </tr>
+        `;
+      }).join('');
       refreshIcons();
     }
   } catch (err) {
@@ -209,36 +232,107 @@ window.deleteAdmin = async function (id, username) {
 }
 
 // ==========================================
-// LOGS MANAGEMENT
+// LOGS MANAGEMENT (WITH PAGINATION)
 // ==========================================
 async function loadLogs() {
   const btn = $('#btnRefreshLogs');
   if (btn) btn.innerHTML = 'Memuat...';
   try {
     const res = await api('/api/logs');
-    const tbody = $('#logRows');
-    if (tbody) {
-      if (res.logs.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 20px;">Belum ada log aktivitas.</td></tr>`;
-      } else {
-        tbody.innerHTML = res.logs.map(l => `
-          <tr>
-            <td style="white-space:nowrap; color:#68a47b; font-weight:600;">${l.waktu}</td>
-            <td><strong>${escapeHtml(l.username)}</strong></td>
-            <td>${escapeHtml(l.ip)}</td>
-            <td style="color:#516059;">${escapeHtml(l.action)}</td>
-          </tr>
-        `).join('');
-      }
-    }
-  } catch (err) { toast(err.message, true); }
-  finally {
+    state.logs = res.logs || [];
+    state.logCurrentPage = 1; // Reset ke halaman pertama saat refresh
+    drawLogs();
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
     if (btn) btn.innerHTML = '<i data-lucide="refresh-ccw" style="width:14px; margin-right:4px;"></i> Muat Ulang';
     refreshIcons();
   }
 }
 
+function drawLogs() {
+  const searchInput = $('#searchLogInput');
+  const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
+
+  // 1. Filter Data
+  let filtered = state.logs.filter(l => {
+    return `${l.username} ${l.action}`.toLowerCase().includes(query);
+  });
+
+  // 2. Pagination Math
+  const totalItems = filtered.length;
+  const totalPages = Math.ceil(totalItems / state.logItemsPerPage) || 1;
+  if (state.logCurrentPage > totalPages) state.logCurrentPage = totalPages;
+
+  const startIdx = (state.logCurrentPage - 1) * state.logItemsPerPage;
+  const endIdx = startIdx + state.logItemsPerPage;
+  const paginated = filtered.slice(startIdx, endIdx);
+
+  // 3. Update Text Info
+  const startNum = totalItems === 0 ? 0 : startIdx + 1;
+  const endNum = Math.min(endIdx, totalItems);
+  if ($('#logTableFoot')) $('#logTableFoot').textContent = `Menampilkan ${startNum}-${endNum} dari ${totalItems} data log (Hal. ${state.logCurrentPage} dari ${totalPages})`;
+
+  // 4. Render Rows
+  const tbody = $('#logRows');
+  if (tbody) {
+    if (paginated.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><div class="empty-icon"><i data-lucide="history"></i></div><strong>${query ? 'Log tidak ditemukan' : 'Belum ada log aktivitas'}</strong></div></td></tr>`;
+    } else {
+      tbody.innerHTML = paginated.map(l => `
+        <tr>
+          <td style="white-space:nowrap; color:#68a47b; font-weight:600;">${l.waktu}</td>
+          <td><strong>${escapeHtml(l.username)}</strong></td>
+          <td>${escapeHtml(l.ip)}</td>
+          <td style="color:#516059;">${escapeHtml(l.action)}</td>
+        </tr>
+      `).join('');
+    }
+    refreshIcons();
+  }
+
+  // 5. Render Pagination Controls
+  let pagesHtml = '';
+  let startPage = Math.max(1, state.logCurrentPage - 2);
+  let endPage = Math.min(totalPages, startPage + 4);
+  if (endPage - startPage < 4) startPage = Math.max(1, endPage - 4);
+
+  for (let i = startPage; i <= endPage; i++) {
+    const activeClass = i === state.logCurrentPage ? 'active' : '';
+    pagesHtml += `<div class="page-item ${activeClass}" onclick="changeLogPage(${i})">${i}</div>`;
+  }
+
+  const limitOptions = [10, 20, 30, 50, 100].map(val => `<option value="${val}" ${state.logItemsPerPage === val ? 'selected' : ''}>${val} / halaman</option>`).join('');
+
+  if ($('#logPaginationControls')) {
+    $('#logPaginationControls').innerHTML = `
+      <div class="page-numbers">
+        <div class="page-arrow ${state.logCurrentPage === 1 ? 'disabled' : ''}" onclick="if(${state.logCurrentPage} > 1) changeLogPage(${state.logCurrentPage - 1})">‹</div>
+        ${pagesHtml}
+        <div class="page-arrow ${state.logCurrentPage === totalPages || totalPages === 0 ? 'disabled' : ''}" onclick="if(${state.logCurrentPage} < ${totalPages}) changeLogPage(${state.logCurrentPage + 1})">›</div>
+      </div>
+      <select class="page-size-select" onchange="changeLogLimit(this.value)">${limitOptions}</select>
+      <div class="page-jump">
+        Ke <input type="number" class="page-jump-input" min="1" max="${totalPages}" onkeydown="if(event.key === 'Enter') jumpLogPage(this.value, ${totalPages})">
+      </div>
+    `;
+  }
+}
+
+// Global functions untuk interaksi pagination log
+window.changeLogPage = function (newPage) { state.logCurrentPage = newPage; drawLogs(); };
+window.changeLogLimit = function (newLimit) { state.logItemsPerPage = Number(newLimit); state.logCurrentPage = 1; drawLogs(); };
+window.jumpLogPage = function (val, maxPage) {
+  let p = Number(val);
+  if (p >= 1 && p <= maxPage) {
+    state.logCurrentPage = p;
+    drawLogs();
+  }
+};
+
+// Listeners untuk fitur pencarian Log
 $('#btnRefreshLogs')?.addEventListener('click', loadLogs);
+$('#searchLogInput')?.addEventListener('input', () => { state.logCurrentPage = 1; drawLogs(); });
 
 // ==========================================
 // MACHINE MANAGEMENT

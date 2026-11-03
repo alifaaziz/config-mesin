@@ -214,13 +214,20 @@
       <section class="content-card" id="logViewCard" style="display: none;">
         <div class="card-heading">
           <div><h3>Log Aktivitas Admin</h3><p>Pantau riwayat masuk dan keluar pengguna sistem.</p></div>
-          <div class="table-tools"><button id="btnRefreshLogs" class="button button-tool"><i data-lucide="refresh-ccw"></i> Muat Ulang</button></div>
+          <div class="table-tools">
+            <label class="search"><i data-lucide="search"></i><input id="searchLogInput" placeholder="Cari username atau aktivitas..."></label>
+            <button id="btnRefreshLogs" class="button button-tool"><i data-lucide="refresh-ccw"></i> Muat Ulang</button>
+          </div>
         </div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>WAKTU</th><th>USERNAME (ADMIN)</th><th>IP ADDRESS</th><th>AKTIVITAS</th></tr></thead>
             <tbody id="logRows"></tbody>
           </table>
+        </div>
+        <div class="table-foot">
+          <div class="pagination-info"><span id="logTableFoot">Menampilkan 0 log</span></div>
+          <div class="pagination-controls" id="logPaginationControls"></div>
         </div>
       </section>
 
@@ -493,6 +500,11 @@
   
   <!-- TOAST & JS -->
   <div class="toast" id="toast"></div>
+  <script>
+    // Menyimpan identitas user yang sedang login ke variabel Global JS
+    window.CURRENT_USER_ID = {{ user.id|default:"null" }};
+    window.IS_SUPERUSER = {{ user.is_superuser|yesno:"true,false" }};
+  </script>
   <script src="{% static 'js/app.js' %}"></script>
   {% endif %}
 </body>

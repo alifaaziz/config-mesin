@@ -120,6 +120,10 @@ def modify_admin(request, admin_id):
         return JsonResponse({'error': 'Admin tidak ditemukan'}, status=404)
 
     if request.method == 'PUT':
+        # --- BLOKIR AKSES JIKA ADMIN BIASA MENCOBA EDIT SUPERADMIN ---
+        if admin.is_superuser and not request.user.is_superuser:
+            return JsonResponse({'error': 'Akses ditolak: Hanya Superadmin yang dapat mengedit akun Superadmin.'}, status=403)
+            
         try:
             data = json.loads(request.body)
             new_username = data.get('username', '').strip()
@@ -147,6 +151,10 @@ def modify_admin(request, admin_id):
     elif request.method == 'DELETE':
         if request.user.id == admin_id:
             return JsonResponse({'error': 'Tidak dapat menghapus akun Anda sendiri.'}, status=400)
+            
+        # --- BLOKIR AKSES JIKA ADMIN BIASA MENCOBA HAPUS SUPERADMIN ---
+        if admin.is_superuser and not request.user.is_superuser:
+            return JsonResponse({'error': 'Akses ditolak: Hanya Superadmin yang dapat menghapus akun Superadmin.'}, status=403)
             
         target_uname = admin.username
         admin.delete()
