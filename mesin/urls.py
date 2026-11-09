@@ -16,6 +16,7 @@ urlpatterns = [
     path('api/devices/<int:dev_id>', views.device_detail, name='device_detail'),
     path('api/devices/<int:dev_id>/connect', views.connect_device, name='connect_device'),
     path('api/devices/<int:dev_id>/users', views.handle_users, name='get_users'),
+    path('api/devices/<int:dev_id>/time', views.handle_device_time, name='handle_device_time'),
     
     # Tools Excel
     path('api/download-template', views.download_excel_template, name='download_template'),

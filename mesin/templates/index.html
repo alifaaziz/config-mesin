@@ -143,7 +143,7 @@
     <!-- MACHINE BANNER -->
     <section class="machine-banner">
       <div class="machine-symbol"><i data-lucide="cpu" style="width: 32px; height: 32px;"></i></div>
-      <div class="machine-copy">
+      <div class="machine-copy" style="flex: 1;">
         <div class="label">
           MESIN TERPILIH <span class="live-indicator" id="statusDot"></span>
           <span id="statusText">Belum terhubung</span>
@@ -151,6 +151,15 @@
         <h2 id="activeName">Belum ada mesin aktif</h2>
         <p id="activeAddress">Tambahkan mesin untuk mulai mengelola data.</p>
       </div>
+
+      <!-- WIDGET WAKTU MESIN (BARU) -->
+      <div id="timeWidget" style="display: none; background: rgba(255,255,255,0.1); padding: 10px 15px; border-radius: 8px; margin-right: 20px; text-align: center; border: 1px solid rgba(255,255,255,0.2);">
+        <div style="font-size: 11px; color: rgba(255,255,255,0.8); margin-bottom: 4px; font-weight: 600; letter-spacing: 0.5px;">WAKTU MESIN</div>
+        <div id="machineTimeDisplay" style="font-family: monospace; font-size: 18px; font-weight: bold; color: white; letter-spacing: 1px;">--:--:--</div>
+        <div id="machineDateDisplay" style="font-size: 11px; color: rgba(255,255,255,0.7); margin-top: 2px;">----/--/--</div>
+        <button id="btnOpenTimeSync" class="button button-ghost" style="margin-top: 8px; padding: 4px 8px; font-size: 11px; color: white; border-color: rgba(255,255,255,0.3);"><i data-lucide="clock" style="width: 12px; margin-right: 4px;"></i> Atur Waktu</button>
+      </div>
+
       <div class="banner-actions">
         <button class="button button-ghost" id="switchMachine">Pilih Mesin</button>
         <button class="button button-light" id="refreshUsers" disabled><i data-lucide="refresh-cw" style="width:14px; margin-right:4px;"></i> Sinkron</button>
@@ -495,6 +504,44 @@
         <button type="button" class="button button-ghost" data-close="bulkDeleteModal">Batal</button>
         <button type="button" class="button button-primary" id="executeBulkDelete" style="background: #cf6262; box-shadow: 0 5px 12px #cf626233;" disabled>Hapus Sekarang <span>→</span></button>
       </div>
+    </section>
+  </div>
+
+  <!-- MODAL: ATUR WAKTU MESIN -->
+  <div class="modal-backdrop" id="timeSyncModal" aria-hidden="true">
+    <section class="modal">
+      <button class="close-button" data-close="timeSyncModal">×</button>
+      <div class="modal-icon"><i data-lucide="clock"></i></div>
+      <h2>Pengaturan Waktu Mesin</h2>
+      <p class="modal-intro">Sesuaikan waktu pada mesin absensi aktif. Anda dapat menyamakan dengan jam komputer atau mengatur manual.</p>
+      
+      <div class="modal-actions" style="margin-bottom: 20px;">
+        <button type="button" class="button button-primary" id="btnSyncComputer" style="width: 100%;">
+          <i data-lucide="monitor" style="width: 16px; margin-right: 6px;"></i> Samakan dengan Waktu Komputer
+        </button>
+      </div>
+
+      <div class="dropdown-divider" style="margin: 20px 0; position: relative; text-align: center;">
+        <span style="background: white; padding: 0 10px; color: #a2aba7; font-size: 12px; position: relative; top: -10px;">Atau atur manual</span>
+      </div>
+
+      <form id="manualTimeForm">
+        <div class="field-row">
+          <label class="field">
+            <span>Tanggal</span>
+            <input type="date" id="manualDate" required>
+          </label>
+          <label class="field">
+            <span>Waktu</span>
+            <input type="time" id="manualTime" step="1" required>
+          </label>
+        </div>
+        <div class="modal-error" id="timeSyncError"></div>
+        <div class="modal-actions">
+          <button type="button" class="button button-ghost" data-close="timeSyncModal">Batal</button>
+          <button type="submit" class="button button-primary" id="btnSyncManual">Simpan Waktu <span>→</span></button>
+        </div>
+      </form>
     </section>
   </div>
   

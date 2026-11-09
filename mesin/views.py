@@ -686,3 +686,81 @@ def preview_excel(request, dev_id):
         },
         "preview": preview_list
     })
+
+@csrf_exempt
+def handle_device_time(request, dev_id):
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+        
+    try:
+        dev = Device.objects.get(id=dev_id)
+    except Device.DoesNotExist:
+        return JsonResponse({"error": "Mesin tidak ditemukan"}, status=404)
+
+    pythoncom.CoInitialize()
+    try:
+        zk = win32com.client.Dispatch("zkemkeeper.ZKEM")
+        zk.SetCommPassword(_get_comm_key(dev))
+        
+        if not zk.Connect_Net(dev.ip, dev.port):
+            return JsonResponse({"error": "Gagal terhubung ke mesin untuk sinkronisasi waktu."}, status=500)
+
+        # GET: Ambil waktu saat ini dari mesin
+        if request.method == 'GET':
+            waktu_mesin = zk.GetDeviceTime(1)
+            zk.Disconnect()
+            if waktu_mesin[0]:
+                _, thn, bln, hr, jm, mnt, dtk = waktu_mesin
+                return JsonResponse({
+                    "time_str": f"{thn}-{bln:02d}-{hr:02d} {jm:02d}:{mnt:02d}:{dtk:02d}",
+                    "tahun": thn, "bulan": bln, "hari": hr,
+                    "jam": jm, "menit": mnt, "detik": dtk
+                })
+            else:
+                return JsonResponse({"error": "Gagal membaca jam dari mesin."}, status=500)
+
+        # POST: Atur waktu mesin (Otomatis komputer atau Manual)
+        elif request.method == 'POST':
+            data = json.loads(request.body)
+            mode = data.get("mode", "computer")  # 'computer' atau 'manual'
+            
+            # Kunci (Disable) mesin agar layarnya siap di-refresh
+            zk.EnableDevice(1, False)
+            
+            berhasil = False
+            if mode == "computer":
+                # zk.SetDeviceTime(1) otomatis menyetel waktu mesin dengan waktu PC tempat server berjalan
+                berhasil = zk.SetDeviceTime(1)
+            elif mode == "manual":
+                j_thn = int(data.get("tahun", 2026))
+                j_bln = int(data.get("bulan", 1))
+                j_hr  = int(data.get("hari", 1))
+                j_jm  = int(data.get("jam", 0))
+                j_mnt = int(data.get("menit", 0))
+                j_dtk = int(data.get("detik", 0))
+                berhasil = zk.SetDeviceTime2(1, j_thn, j_bln, j_hr, j_jm, j_mnt, j_dtk)
+
+            # Refresh data internal mesin
+            zk.RefreshData(1)
+            
+            # Ambil kembali waktu terbaru untuk dikirim ke frontend
+            waktu_baru = zk.GetDeviceTime(1)
+            
+            # Buka kembali (Enable) mesin, ini akan memaksa layar LCD me-refresh jam
+            zk.EnableDevice(1, True)
+            zk.Disconnect()
+
+            if berhasil:
+                record_log(request, f"Menyinkronkan waktu pada mesin {dev.ip} (Mode: {mode})")
+                new_time = ""
+                if waktu_baru[0]:
+                    _, t, b, h, j, m, d = waktu_baru
+                    new_time = f"{t}-{b:02d}-{h:02d} {j:02d}:{m:02d}:{d:02d}"
+                return JsonResponse({"message": "Waktu mesin berhasil diubah", "new_time": new_time})
+            else:
+                return JsonResponse({"error": "Gagal mengubah waktu mesin."}, status=500)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+    finally:
+        pythoncom.CoUninitialize()

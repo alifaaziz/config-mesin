@@ -3,7 +3,10 @@ const state = {
   currentPage: 1, itemsPerPage: 30, sortCol: 'id', sortDir: 'asc',
   selectedUsers: new Map(),
 
-  logs: [], logCurrentPage: 1, logItemsPerPage: 30
+  logs: [], logCurrentPage: 1, logItemsPerPage: 30,
+
+  machineTimeDate: null,
+  machineTimeInterval: null
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -441,6 +444,7 @@ async function selectDevice(id) {
     state.users = data.users;
     await loadDevices();
     drawUsers();
+    fetchMachineTime();
     modal('devicePicker', false);
     toast(`${data.users.length} data karyawan berhasil dimuat.`);
   } catch (error) {
@@ -477,6 +481,7 @@ $('#machineForm')?.addEventListener('submit', async event => {
     state.users = data.users;
     await loadDevices();
     drawUsers();
+    fetchMachineTime();
     modal('machineModal', false);
     formElement?.reset();
     toast('Mesin terhubung dan konfigurasi tersimpan.');
@@ -693,7 +698,8 @@ async function refreshUsers() {
     const data = await api(`/api/devices/${state.activeId}/users`);
     state.users = data.users;
     drawUsers();
-    toast(`${data.users.length} karyawan berhasil dimuat.`);
+    await fetchMachineTime();
+    toast(`${data.users.length} karyawan dan waktu berhasil disinkronkan.`);
   }
   catch (error) { toast(error.message, true); }
   finally { if (btn) btn.disabled = !state.activeId; }
@@ -1001,6 +1007,127 @@ function setupPasswordToggle(btnSelector, inputSelector) {
     if (eyeClosed) eyeClosed.style.display = isPass ? 'inline' : 'none';
   });
 }
+
+// ==========================================
+// PENGATURAN WAKTU MESIN (REAL-TIME & SYNC)
+// ==========================================
+function startMachineTimer(timeString) {
+  if (state.machineTimeInterval) clearInterval(state.machineTimeInterval);
+
+  // Parsing string "YYYY-MM-DD HH:MM:SS" (Abaikan timezone agar tidak bergeser)
+  const [datePart, timePart] = timeString.split(' ');
+  const [year, month, day] = datePart.split('-');
+  const [hours, minutes, seconds] = timePart.split(':');
+
+  state.machineTimeDate = new Date(year, month - 1, day, hours, minutes, seconds);
+
+  const displayTime = $('#machineTimeDisplay');
+  const displayDate = $('#machineDateDisplay');
+
+  state.machineTimeInterval = setInterval(() => {
+    state.machineTimeDate.setSeconds(state.machineTimeDate.getSeconds() + 1);
+
+    if (displayTime && displayDate) {
+      const h = String(state.machineTimeDate.getHours()).padStart(2, '0');
+      const m = String(state.machineTimeDate.getMinutes()).padStart(2, '0');
+      const s = String(state.machineTimeDate.getSeconds()).padStart(2, '0');
+      const y = state.machineTimeDate.getFullYear();
+      const mo = String(state.machineTimeDate.getMonth() + 1).padStart(2, '0');
+      const d = String(state.machineTimeDate.getDate()).padStart(2, '0');
+
+      displayTime.textContent = `${h}:${m}:${s}`;
+      displayDate.textContent = `${y}/${mo}/${d}`;
+    }
+  }, 1000);
+}
+
+async function fetchMachineTime() {
+  if (!state.activeId) return;
+  try {
+    const res = await api(`/api/devices/${state.activeId}/time`);
+    if (res.time_str) {
+      $('#timeWidget').style.display = 'block';
+      startMachineTimer(res.time_str);
+    }
+  } catch (err) {
+    console.error("Gagal mengambil waktu:", err.message);
+    $('#timeWidget').style.display = 'none';
+  }
+}
+
+// Buka Modal Waktu
+$('#btnOpenTimeSync')?.addEventListener('click', () => {
+  if (!state.machineTimeDate) return;
+  // Set default form ke waktu mesin saat ini
+  const y = state.machineTimeDate.getFullYear();
+  const m = String(state.machineTimeDate.getMonth() + 1).padStart(2, '0');
+  const d = String(state.machineTimeDate.getDate()).padStart(2, '0');
+  const h = String(state.machineTimeDate.getHours()).padStart(2, '0');
+  const min = String(state.machineTimeDate.getMinutes()).padStart(2, '0');
+  const s = String(state.machineTimeDate.getSeconds()).padStart(2, '0');
+
+  $('#manualDate').value = `${y}-${m}-${d}`;
+  $('#manualTime').value = `${h}:${min}:${s}`;
+  if ($('#timeSyncError')) $('#timeSyncError').textContent = '';
+  modal('timeSyncModal', true);
+});
+
+// Sinkronisasi dengan Jam Komputer
+$('#btnSyncComputer')?.addEventListener('click', async (e) => {
+  if (!state.activeId) return;
+  const btn = e.currentTarget;
+  const originalText = btn.innerHTML;
+  btn.disabled = true; btn.textContent = 'Menyinkronkan...';
+
+  try {
+    const res = await api(`/api/devices/${state.activeId}/time`, {
+      method: 'POST',
+      body: JSON.stringify({ mode: 'computer' })
+    });
+    modal('timeSyncModal', false);
+    toast(res.message);
+    if (res.new_time) startMachineTimer(res.new_time);
+  } catch (err) {
+    if ($('#timeSyncError')) $('#timeSyncError').textContent = err.message;
+  } finally {
+    btn.disabled = false; btn.innerHTML = originalText;
+  }
+});
+
+// Sinkronisasi Manual
+$('#manualTimeForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault(); // Mencegah reload halaman
+
+  if (!state.activeId) return;
+  const btn = $('#btnSyncManual');
+  btn.disabled = true; btn.textContent = 'Menyimpan...';
+
+  try {
+    const dateVal = $('#manualDate').value;
+    const timeVal = $('#manualTime').value;
+    const [thn, bln, hr] = dateVal.split('-');
+    const [jm, mnt, dtk] = (timeVal.length === 5 ? timeVal + ':00' : timeVal).split(':');
+
+    const payload = {
+      mode: 'manual',
+      tahun: parseInt(thn), bulan: parseInt(bln), hari: parseInt(hr),
+      jam: parseInt(jm), menit: parseInt(mnt), detik: parseInt(dtk)
+    };
+
+    const res = await api(`/api/devices/${state.activeId}/time`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    modal('timeSyncModal', false);
+    toast(res.message);
+    if (res.new_time) startMachineTimer(res.new_time);
+  } catch (err) {
+    if ($('#timeSyncError')) $('#timeSyncError').textContent = err.message;
+  } finally {
+    btn.disabled = false; btn.innerHTML = 'Simpan Waktu <span>→</span>';
+  }
+});
 
 // Inisialisasi manual per input password
 setupPasswordToggle('#toggleNewAdminPass', '#newAdminPass');
