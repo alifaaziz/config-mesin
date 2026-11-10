@@ -1072,7 +1072,7 @@ $('#btnOpenTimeSync')?.addEventListener('click', () => {
   modal('timeSyncModal', true);
 });
 
-// Sinkronisasi dengan Jam Komputer
+// Sinkronisasi dengan Jam Komputer Admin (Browser)
 $('#btnSyncComputer')?.addEventListener('click', async (e) => {
   if (!state.activeId) return;
   const btn = e.currentTarget;
@@ -1080,10 +1080,23 @@ $('#btnSyncComputer')?.addEventListener('click', async (e) => {
   btn.disabled = true; btn.textContent = 'Menyinkronkan...';
 
   try {
+    // Tarik waktu seketika dari browser komputer admin yang sedang buka web
+    const now = new Date();
+    const payload = {
+      mode: 'client_computer',
+      tahun: now.getFullYear(),
+      bulan: now.getMonth() + 1,
+      hari: now.getDate(),
+      jam: now.getHours(),
+      menit: now.getMinutes(),
+      detik: now.getSeconds()
+    };
+
     const res = await api(`/api/devices/${state.activeId}/time`, {
       method: 'POST',
-      body: JSON.stringify({ mode: 'computer' })
+      body: JSON.stringify(payload)
     });
+
     modal('timeSyncModal', false);
     toast(res.message);
     if (res.new_time) startMachineTimer(res.new_time);
